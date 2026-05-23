@@ -1,0 +1,35 @@
+{
+  "name": "claude-context-autopilot",
+  "version": "1.0.0",
+  "description": "Cross-platform, token-free autopilot for Claude Code: auto /compact at a context threshold, with a safe ask-then-save-then-/clear fallback. Wraps the CLI in a PTY — no focus stealing, no simulated keystrokes.",
+  "bin": {
+    "claude-autopilot": "bin/cli.js"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "node-pty": "^1.0.0"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "context",
+    "compact",
+    "pty",
+    "cli",
+    "automation",
+    "llm"
+  ],
+  "license": "MIT",
+  "files": [
+    "bin/",
+    "src/",
+    "README.md",
+    "AGENT_SETUP.md",
+    "LICENSE"
+  ]
+}

@@ -3,6 +3,12 @@
 .claude-autopilot.lock
 .claude-autopilot-todo.md
 
+# Dependencies (restored via `npm install`)
+node_modules/
+
+# Local Claude Code session state that lands here when you test inside this repo
+.claude/
+
 # OS / editor cruft
 Thumbs.db
 desktop.ini
