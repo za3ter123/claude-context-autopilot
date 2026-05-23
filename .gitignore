@@ -1,0 +1,9 @@
+# Runtime artifacts the watcher writes into the project it guards
+.claude-autopilot.log
+.claude-autopilot.lock
+.claude-autopilot-todo.md
+
+# OS / editor cruft
+Thumbs.db
+desktop.ini
+.DS_Store
