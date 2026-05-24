@@ -8,6 +8,11 @@ exactly like the real CLI. In the background it reads the session transcript **f
 tokens) and, when the context gets full, it types `/compact` for you — and if a compaction isn't enough,
 it runs a safe **ask → save handoff → `/clear`** flow so you never lose your place.
 
+You pick the thresholds: **at what % to compact**, and — optionally — **a higher ceiling above which it
+should *not* compact at all**, and instead dump a todo list, ask you what to keep and what to add, and
+only `/clear` once *you* confirm. So the tool does the cheap thing (compact) in the normal zone, and hands
+control back to you when context is too full for a compaction to save.
+
 **No focus stealing. No simulated OS keystrokes. No Notepad. No GUI.** Identical on macOS, Linux, and
 Windows, because it owns Claude's stdin directly instead of poking at windows.
 
@@ -31,16 +36,33 @@ Then runs a 3-state machine:
 
 | State | Trigger | Action |
 |-------|---------|--------|
-| **MONITORING** | `pct >= compactAt` (default 60%) | Types `/compact`, records pre-compact tokens, → POST_COMPACT_WAIT |
+| **MONITORING** | `pct >= noCompactAt` (the ceiling, if set) | **Skip `/compact`** — type the **no-compact handoff prompt**, → CLEARING (user-confirmed) |
+| **MONITORING** | else `pct >= compactAt` (default 60%) | Types `/compact`, records pre-compact tokens, → POST_COMPACT_WAIT |
 | **POST_COMPACT_WAIT** | compaction settles (usage drops ≥5% of window, or 150s timeout) | If `pct >= clearAt` (default 55%) → type the **handoff prompt**, → CLEARING. Else → cooldown 60s → MONITORING |
-| **CLEARING** | `.claude-autopilot-todo.md` is freshly written (mtime > prompt time, non-empty) | Types `/clear`. (600s timeout abandons the clear — your session is left intact.) |
+| **CLEARING** | `.claude-autopilot-todo.md` is freshly written (and, on the no-compact path, your `AUTOPILOT-READY` marker is present) | Types `/clear`. (Timeout abandons the clear — your session is left intact.) |
 
 **The `/clear` never fires before your handoff is saved to disk.** The handoff prompt tells Claude to
 *first ask you* what to preserve and what's left to do, write your answers to `.claude-autopilot-todo.md`,
 and only then does the watcher send `/clear`.
 
-By design `clearAt <= compactAt`: the clear flow only fires when a `/compact` **failed** to bring usage
-back under the line — the "compaction wasn't enough, hand off and start fresh" fallback.
+By design `clearAt <= compactAt`: the post-compact clear flow only fires when a `/compact` **failed** to
+bring usage back under the line — the "compaction wasn't enough, hand off and start fresh" fallback.
+
+### The no-compact ceiling (`--no-compact-at`)
+
+Set `--no-compact-at <pct>` (must be `>= --compact-at`) and you get a third, higher zone. Once context
+crosses that ceiling the autopilot decides a `/compact` won't save you and **skips it entirely**. Instead
+it sends a richer prompt that tells Claude to:
+
+1. Write the remaining task list and everything worth preserving to `.claude-autopilot-todo.md`.
+2. **Ask you** what else belongs on the list and what should be dropped.
+3. Add your answers — and keep editing while you add items.
+4. Append the line `AUTOPILOT-READY` **only after you confirm**.
+
+The watcher holds the `/clear` until that `AUTOPILOT-READY` marker appears — so you stay in control of
+what survives into the fresh session. It waits up to 30 minutes for your confirmation (vs. the 10-minute
+window on the automatic post-compact path) precisely because a human is in the loop. Leave it at `0`
+(default) to keep the classic compact-then-maybe-clear behaviour.
 
 ## Requirements
 
@@ -54,7 +76,7 @@ back under the line — the "compaction wasn't enough, hand off and start fresh"
 git clone https://github.com/za3ter123/claude-context-autopilot.git
 cd claude-context-autopilot
 npm install        # pulls node-pty (prebuilt binary, no compiler needed on Node 18+)
-npm test           # 15 unit tests — verify it works before trusting it
+npm test           # 22 unit tests — verify it works before trusting it
 ```
 
 Optionally put it on your PATH so you can run it from any project:
@@ -94,6 +116,7 @@ claude-autopilot -- --model opus
 |--------|---------|---------|
 | `--compact-at <pct>` | `60` | Context % that triggers `/compact` |
 | `--clear-at <pct>` | `55` | Context % that, if still hit *after* a compaction, starts the ask → handoff → `/clear` flow |
+| `--no-compact-at <pct>` | `0` (off) | Ceiling above which it **skips `/compact`** and runs the user-confirmed todo handoff instead. Must be `>= --compact-at` |
 | `--window <tokens>` | `0` | Token window for %; `0` = read `autoCompactWindow` from settings.json, else 200000 |
 | `--poll <seconds>` | `20` | Seconds between transcript reads |
 | `--claude-cmd <cmd>` | `claude` | Command used to launch Claude Code |
@@ -104,6 +127,12 @@ Example: be more relaxed about it —
 
 ```bash
 claude-autopilot --compact-at 70 --clear-at 60
+```
+
+Example: compact at 70%, but past 88% stop compacting and hand off to me instead —
+
+```bash
+claude-autopilot --compact-at 70 --no-compact-at 88
 ```
 
 ## How injection works (and why it's safe)
@@ -120,15 +149,17 @@ into the Claude it launched. It makes **no network calls**.
 ## Files it writes (in the project dir)
 
 - `.claude-autopilot.log` — what it observed and did
-- `.claude-autopilot-todo.md` — your handoff (Claude writes this; the watcher waits for it before `/clear`)
+- `.claude-autopilot-todo.md` — your handoff (Claude writes this; the watcher waits for it before `/clear`).
+  On the no-compact path it must end with an `AUTOPILOT-READY` line, which you confirm, before the `/clear`.
 
 All three are git-ignored by default.
 
 ## No config dependency
 
-The full instruction set Claude follows before an auto-clear rides inside the single `CLEAR_PROMPT`
-string at the top of [`bin/cli.js`](bin/cli.js). There is **no** dependency on `CLAUDE.md` or any other
-config file — edit that one string to change what Claude is told.
+The full instruction set Claude follows before an auto-clear rides inside two strings at the top of
+[`bin/cli.js`](bin/cli.js): `CLEAR_PROMPT` (the post-compact handoff) and `NOCOMPACT_PROMPT` (the
+user-confirmed handoff used at the ceiling). There is **no** dependency on `CLAUDE.md` or any other config
+file — edit those strings to change what Claude is told.
 
 ## Set it up with your AI agent
 

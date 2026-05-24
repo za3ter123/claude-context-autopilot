@@ -26,7 +26,7 @@ INSTALL
    If install fails on a native build, tell me the exact error instead of guessing.)
 
 VERIFY (do not skip — I want proof it works before trusting it)
-4. Run the unit tests: `npm test`. Confirm all tests pass (expect 15 passing). Paste the summary line.
+4. Run the unit tests: `npm test`. Confirm all tests pass (expect 22 passing). Paste the summary line.
 5. Run a read-only live check from inside one of MY real projects (ask me which directory if unsure):
      cd /path/to/my/project
      node /absolute/path/to/claude-context-autopilot/bin/cli.js --dry-run
@@ -43,7 +43,9 @@ EXPLAIN + START
 7. Tell me, in 2-3 lines: from now on I start Claude with `claude-autopilot` (instead of `claude`) inside
    any project, and use Claude normally. Defaults: /compact at 60% context, and if a compaction isn't
    enough it asks me for a handoff, saves it to `.claude-autopilot-todo.md`, then /clears. Mention I can
-   tune it with `--compact-at` and `--clear-at`.
+   tune it with `--compact-at` and `--clear-at`, and that `--no-compact-at <pct>` (a higher ceiling, e.g.
+   88) makes it STOP compacting past that point and instead dump a todo, ask me what to keep/add, and only
+   /clear after I confirm with an `AUTOPILOT-READY` line — so I stay in control near the very top.
 8. Do NOT auto-start a live wrapped session yourself (it would take over this terminal). Just confirm
    setup is complete and show me the one command to run when I'm ready.
 

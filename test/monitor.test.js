@@ -79,3 +79,62 @@ test('honors cooldown after a sufficient compaction', () => {
   const after = a.tick({ usedTokens: 0.65 * W, now: 63000 });
   assert.strictEqual(after.action, 'compact');              // cooldown elapsed
 });
+
+// ---- no-compact ceiling (Project 3) ----------------------------------------------------------
+const nc = { compactAt: 60, clearAt: 55, noCompactAt: 85, windowTokens: W };
+
+test('rejects a no-compact ceiling below the compact threshold', () => {
+  assert.throws(() => new Autopilot({ compactAt: 60, clearAt: 55, noCompactAt: 50, windowTokens: W }));
+});
+
+test('between compactAt and the ceiling it still compacts normally', () => {
+  const a = new Autopilot(nc);
+  const r = a.tick({ usedTokens: 0.70 * W, now: 1000 });    // 70%: above compact, below ceiling
+  assert.strictEqual(r.action, 'compact');
+  assert.strictEqual(r.state, STATES.POST_COMPACT_WAIT);
+});
+
+test('at the no-compact ceiling it skips /compact and goes straight to handoff', () => {
+  const a = new Autopilot(nc);
+  const r = a.tick({ usedTokens: 0.86 * W, now: 1000 });    // 86%: at/above the ceiling
+  assert.strictEqual(r.action, 'prompt-nocompact');
+  assert.strictEqual(r.state, STATES.CLEARING);
+});
+
+test('no-compact handoff waits for the user confirmation before clearing', () => {
+  const a = new Autopilot(nc);
+  const t0 = 1000;
+  a.tick({ usedTokens: 0.86 * W, now: t0 });                // -> prompt-nocompact at t0
+
+  // Agent wrote the todo (fresh) but the user has not confirmed yet -> hold, do NOT clear.
+  const waiting = a.tick({ usedTokens: 0.86 * W, now: t0 + 5000, todoMtime: t0 + 1, handoffConfirmed: false });
+  assert.strictEqual(waiting.action, 'awaiting-confirm');
+  assert.strictEqual(waiting.state, STATES.CLEARING);
+
+  // User added items and confirmed (marker present) -> clear.
+  const done = a.tick({ usedTokens: 0.86 * W, now: t0 + 9000, todoMtime: t0 + 8000, handoffConfirmed: true });
+  assert.strictEqual(done.action, 'clear');
+  assert.strictEqual(done.state, STATES.MONITORING);
+});
+
+test('no-compact handoff uses the longer confirm timeout before abandoning', () => {
+  const a = new Autopilot(nc);
+  const t0 = 1000;
+  a.tick({ usedTokens: 0.86 * W, now: t0 });                // -> prompt-nocompact
+
+  // Past the 10-min post-compact clearTimeout but within the 30-min confirm window: still waiting.
+  const stillWaiting = a.tick({ usedTokens: 0.86 * W, now: t0 + 600001, todoMtime: 0, handoffConfirmed: false });
+  assert.strictEqual(stillWaiting.action, 'none');
+  assert.strictEqual(stillWaiting.state, STATES.CLEARING);
+
+  // Past the 30-min confirm window with nothing saved -> abandon (leave the session intact).
+  const gaveUp = a.tick({ usedTokens: 0.86 * W, now: t0 + 1800001, todoMtime: 0, handoffConfirmed: false });
+  assert.strictEqual(gaveUp.action, 'abort-clear');
+  assert.strictEqual(gaveUp.state, STATES.MONITORING);
+});
+
+test('the ceiling takes priority over the compact threshold when both are exceeded', () => {
+  const a = new Autopilot(nc);
+  const r = a.tick({ usedTokens: 0.90 * W, now: 1000 });    // 90%: above both
+  assert.strictEqual(r.action, 'prompt-nocompact');         // not 'compact'
+});
